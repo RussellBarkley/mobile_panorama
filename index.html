@@ -2,137 +2,92 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Zoomify — Stitched image sequence (Microscopy)</title>
+  <title>Zoomify — Single image (Microscopy)</title>
   <script src="openseadragon/openseadragon.min.js"></script>
   <script src="openseadragon/openseadragon-scalebar.js"></script>
   <style>
     html, body { height: 100%; margin: 0; background:#111; color:#fff; font:14px/1.35 system-ui, Arial, sans-serif; }
     #osd { position:absolute; inset:0; }
-    #label {
-      position:absolute; top:12px; left:50%; transform:translateX(-50%);
-      z-index:10; background:rgba(0,0,0,.55); padding:6px 12px; border-radius:8px;
-      pointer-events:none; user-select:none; font-weight:600; opacity:.95; max-width:80vw; text-align:center;
-    }
     #err {
       position:absolute; bottom:10px; left:50%; transform:translateX(-50%);
       background:rgba(200,0,0,.25); border:1px solid rgba(255,80,80,.5);
       padding:6px 10px; border-radius:6px; max-width:90vw; font-size:12px; display:none;
+      white-space:pre-wrap;
     }
   </style>
 </head>
 <body>
-  <div id="label">Loading…</div>
   <div id="osd"></div>
   <div id="err"></div>
 
   <script>
-    // ── Microscopy scale ───────────────────────────────────────────────────────
-    // Put your original calibration here (BEFORE any pre-tiling downsample):
-    const PIXELS_PER_MICRON_ORIG = 8.0453;  // px / µm from your microscope
-    // If you down-sampled before tiling (e.g., 4× shrink), set that factor here:
-    const DOWNSAMPLE_FACTOR = 4;            // 1 if no pre-downsampling
-    // Effective pixels-per-micron in the tiles you’re viewing:
-    const PIXELS_PER_MICRON = PIXELS_PER_MICRON_ORIG / Math.max(1, DOWNSAMPLE_FACTOR);
-    const PIXELS_PER_METER  = PIXELS_PER_MICRON * 1e6; // px / m
+    // ── QUICK CONFIG ───────────────────────────────────────────────────────────
+    const FOLDER = "Run68TR_top_right_downsample2fold_zoomify"; // your Zoomify folder
+    const PIXELS_PER_MICRON = 4.0226;                           // px / µm
+    // ──────────────────────────────────────────────────────────────────────────
 
-    // EXACT Zoomify folder names (each contains ImageProperties.xml + TileGroup*)
-    // If index.html is alongside them, keep as-is. Otherwise prefix paths as needed.
-    const folders = [
-      { dir: "Run72TR_bottom_left_zoomify", title: "Run72TR_bottom_left.tif" },
-      { dir: "Run63TR_top_right_zoomify",   title: "Run63TR_top_right.tif"   },
-      { dir: "Run72BR_top_right_zoomify",   title: "Run72BR_top_right.tif"   },
-      { dir: "Run68TR_top_right_zoomify",   title: "Run68TR_top_right.tif"   },
-      { dir: "Run25BR_top_right_zoomify",   title: "Run25BR_top_right.tif"   }
-    ];
+    const errEl = document.getElementById('err');
+    const PIXELS_PER_METER = PIXELS_PER_MICRON * 1e6;
 
-    const labelEl = document.getElementById('label');
-    const errEl   = document.getElementById('err');
-
-    // Fetch helper with nicer errors
-    async function fetchText(url) {
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) throw new Error(`${url} → HTTP ${res.status}`);
-      return res.text();
-    }
-
-    // Read Zoomify XML; vips writes WIDTH/HEIGHT/TILESIZE
+    // Load Zoomify ImageProperties.xml (libvips writes it with this exact name)
     async function loadZoomifyProps(baseDir) {
-      const candidates = [
-        `${baseDir}/ImageProperties.xml`,
-        `${baseDir}/imageproperties.xml`
-      ];
-      let lastErr = null;
-      for (const url of candidates) {
-        try {
-          const text = await fetchText(url);
-          const xml  = new DOMParser().parseFromString(text, "text/xml");
-          const props = xml.getElementsByTagName("IMAGE_PROPERTIES")[0];
-          if (!props) throw new Error("Missing <IMAGE_PROPERTIES>");
-          const width    = parseInt(props.getAttribute("WIDTH"));
-          const height   = parseInt(props.getAttribute("HEIGHT"));
-          const tileSize = parseInt(props.getAttribute("TILESIZE")) || 256;
-          if (!Number.isFinite(width) || !Number.isFinite(height)) {
-            throw new Error("Invalid WIDTH/HEIGHT in ImageProperties.xml");
-          }
-          return { width, height, tileSize };
-        } catch (e) {
-          lastErr = e.message;
-        }
-      }
-      throw new Error(`Could not read ImageProperties.xml in ${baseDir}. Last: ${lastErr}`);
+      const url = `${baseDir}/ImageProperties.xml`;
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+      const xmlText = await res.text();
+      const xml = new DOMParser().parseFromString(xmlText, "text/xml");
+      const props = xml.getElementsByTagName("IMAGE_PROPERTIES")[0];
+      if (!props) throw new Error("Missing <IMAGE_PROPERTIES> in ImageProperties.xml");
+      const width    = parseInt(props.getAttribute("WIDTH"));
+      const height   = parseInt(props.getAttribute("HEIGHT"));
+      const tileSize = parseInt(props.getAttribute("TILESIZE")) || 256;
+      return { width, height, tileSize };
     }
 
-    // Detect whether tiles are .jpg or .png by probing the topmost tile
-    async function detectTileFormat(baseDir) {
-      const guessUrls = [
-        `${baseDir}/TileGroup0/0-0-0.jpg`,
-        `${baseDir}/TileGroup0/0-0-0.jpeg`,
-        `${baseDir}/TileGroup0/0-0-0.png`,
-      ];
-      for (const url of guessUrls) {
+    // Detect whether tiles are .jpg or .png by probing the first tile
+    async function detectFileFormat(baseDir) {
+      const probe = async (ext, method="HEAD") => {
+        const url = `${baseDir}/TileGroup0/0-0-0.${ext}`;
         try {
-          const res = await fetch(url, { cache: "no-store" });
-          if (res.ok) return url.split('.').pop().toLowerCase(); // 'jpg','jpeg','png'
-        } catch {}
-      }
-      // Fallback to 'jpg' which is what vips uses by default
-      return 'jpg';
-    }
-
-    async function buildTileSources(items) {
-      const out = [];
-      for (const it of items) {
-        const props = await loadZoomifyProps(it.dir);
-        const ext   = (await detectTileFormat(it.dir)).replace('jpeg', 'jpg');
-        out.push({
-          type: "zoomifytileservice",
-          tilesUrl: it.dir + "/",
-          width: props.width,
-          height: props.height,
-          tileSize: props.tileSize,
-          fileFormat: ext,          // 'jpg' or 'png'
-          // tileOverlap: 0,         // optional (Zoomify default is 0 unless changed)
-        });
-      }
-      return out;
+          const res = await fetch(url, { method, cache: "no-store" });
+          return res.ok;
+        } catch { return false; }
+      };
+      if (await probe("jpg")) return "jpg";
+      if (await probe("png")) return "png";
+      if (await probe("jpg", "GET")) return "jpg";
+      if (await probe("png", "GET")) return "png";
+      return "jpg"; // fallback
     }
 
     (async () => {
       try {
-        const tileSources = await buildTileSources(folders);
+        const props = await loadZoomifyProps(FOLDER);
+        const fileFormat = await detectFileFormat(FOLDER);
+
+        const tileSource = {
+          type: "zoomifytileservice",
+          tilesUrl: FOLDER + "/",
+          width: props.width,
+          height: props.height,
+          tileSize: props.tileSize,
+          fileFormat
+        };
 
         const viewer = OpenSeadragon({
           id: 'osd',
-          prefixUrl: 'openseadragon/images/',   // path to OSD button icons
-          sequenceMode: tileSources.length > 1,
+          prefixUrl: 'openseadragon/images/',
+          tileSources: [tileSource],
+          sequenceMode: false,
           preserveViewport: true,
           showNavigator: false,
-          tileSources
+          maxZoomPixelRatio: 2.0,  // bump if you want more over-zoom
+          visibilityRatio: 1.0
         });
 
-        // ── Microscopy scalebar ────────────────────────────────────────────────
+        // Microscopy scalebar
         viewer.scalebar({
-          type: OpenSeadragon.ScalebarType.MICROSCOPY,   // µm/mm labels
+          type: OpenSeadragon.ScalebarType.MICROSCOPY,
           pixelsPerMeter: PIXELS_PER_METER,
           minWidth: "120px",
           xOffset: 12,
@@ -145,15 +100,7 @@
           barThickness: 3
         });
 
-        function updateLabel() {
-          const p = viewer.currentPage();
-          const entry = folders[p];
-          labelEl.textContent = entry ? entry.title : `Page ${p + 1}`;
-        }
-        viewer.addHandler('open', updateLabel);
-        viewer.addHandler('page', updateLabel);
-
-        // Troubleshooting helpers
+        // Error helpers
         viewer.addHandler('tile-load-failed', (e) => {
           errEl.style.display = 'block';
           errEl.textContent = `Tile failed: ${e.message || 'HTTP error'} — ${e.tile?.url || ''}`;
@@ -163,13 +110,6 @@
           errEl.style.display = 'block';
           errEl.textContent = `Open failed: ${e.message || 'unknown error'}`;
           console.error('Open failed', e);
-        });
-
-        // Keyboard navigation: ← / → to move; 1–9 to jump
-        window.addEventListener('keydown', (e) => {
-          if (e.key === 'ArrowRight') viewer.nextPage();
-          else if (e.key === 'ArrowLeft') viewer.previousPage();
-          else if (/^[1-9]$/.test(e.key)) viewer.goToPage(Math.min(parseInt(e.key, 10) - 1, tileSources.length - 1));
         });
       } catch (e) {
         errEl.style.display = 'block';
