@@ -10,16 +10,13 @@
     html, body { height: 100%; margin: 0; background:#111; color:#fff; font:14px/1.35 system-ui, Arial, sans-serif; }
     #osd { position:absolute; inset:0; }
 
-    /* Title moved to bottom center */
+    /* Title at bottom center */
     #label {
       position:absolute; bottom:14px; left:50%; transform:translateX(-50%);
       z-index:10; background:rgba(0,0,0,.55); padding:6px 12px; border-radius:8px;
       pointer-events:none; user-select:none; font-weight:600; opacity:.95; max-width:80vw; text-align:center;
     }
-    /* Extra clearance on touch/smaller screens so it doesn't collide with scalebar/controls */
-    @media (pointer: coarse), (max-width: 900px) {
-      #label { bottom: 84px; }
-    }
+    @media (pointer: coarse), (max-width: 900px) { #label { bottom: 84px; } }
 
     #err {
       position:absolute; bottom:10px; left:50%; transform:translateX(-50%);
@@ -27,31 +24,24 @@
       padding:6px 10px; border-radius:6px; max-width:90vw; font-size:12px; display:none;
     }
 
-    /* --- Bigger toolbar buttons --- */
+    /* Bigger toolbar buttons */
     .openseadragon-container .openseadragon-button,
-    .openseadragon-container .openseadragon-button > div {
-      width: 34px; height: 34px;
-    }
-    .openseadragon-container .openseadragon-button > div { background-size: 100% 100% !important; }
-    .openseadragon-container .openseadragon-button { margin: 4px; }
+    .openseadragon-container .openseadragon-button > div { width:34px; height:34px; }
+    .openseadragon-container .openseadragon-button > div { background-size:100% 100% !important; }
+    .openseadragon-container .openseadragon-button { margin:4px; }
 
     @media (pointer: coarse), (max-width: 900px) {
       .openseadragon-container .openseadragon-button,
-      .openseadragon-container .openseadragon-button > div {
-        width: 52px; height: 52px;
-      }
-      .openseadragon-container .openseadragon-button { margin: 6px; }
-      .openseadragon-container .openseadragon-control { margin: 10px; }
+      .openseadragon-container .openseadragon-button > div { width:52px; height:52px; }
+      .openseadragon-container .openseadragon-button { margin:6px; }
+      .openseadragon-container .openseadragon-control { margin:10px; }
     }
 
-    /* --- Force controls to NEVER fade/hide --- */
+    /* Backstop: force visible (in case of theme overrides) */
     .openseadragon-container .openseadragon-control {
-      opacity: 1 !important;
-      transition: none !important;
-      pointer-events: auto !important;
-      visibility: visible !important;
+      opacity:1 !important; transition:none !important; visibility:visible !important; pointer-events:auto !important;
     }
-    .openseadragon-container .openseadragon-control:hover { opacity: 1 !important; }
+    .openseadragon-container .openseadragon-control:hover { opacity:1 !important; }
   </style>
 </head>
 <body>
@@ -60,11 +50,9 @@
   <div id="err"></div>
 
   <script>
-    // ── Microscopy scale (edit this) ─────────────────────────────────────────────
-    const PIXELS_PER_MICRON = 8.0453;                 // px / µm
+    const PIXELS_PER_MICRON = 8.0453;
     const PIXELS_PER_METER  = PIXELS_PER_MICRON * 1e6;
 
-    // EXACT folder names you have (each contains ImageProperties.xml + TileGroup*)
     const folders = [
       { dir: "Run72TR_bottom_left_zoomify", title: "Run72TR_bottom_left.tif" },
       { dir: "Run63TR_top_right_zoomify",   title: "Run63TR_top_right.tif"   },
@@ -77,10 +65,7 @@
     const errEl   = document.getElementById('err');
 
     async function loadZoomifyProps(baseDir) {
-      const candidates = [
-        `${baseDir}/ImageProperties.xml`,
-        `${baseDir}/imageproperties.xml`
-      ];
+      const candidates = [`${baseDir}/ImageProperties.xml`, `${baseDir}/imageproperties.xml`];
       let lastErr = null;
       for (const url of candidates) {
         try {
@@ -90,14 +75,12 @@
           const xml  = new DOMParser().parseFromString(text, "text/xml");
           const props = xml.getElementsByTagName("IMAGE_PROPERTIES")[0];
           if (!props) throw new Error("Missing <IMAGE_PROPERTIES>");
-          const width    = parseInt(props.getAttribute("WIDTH"));
-          const height   = parseInt(props.getAttribute("HEIGHT"));
-          const tileSize = parseInt(props.getAttribute("TILESIZE")) || 256;
-          const fileFormat = "jpg";  // change to "png" if you exported PNG tiles
+          const width     = parseInt(props.getAttribute("WIDTH"));
+          const height    = parseInt(props.getAttribute("HEIGHT"));
+          const tileSize  = parseInt(props.getAttribute("TILESIZE")) || 256;
+          const fileFormat = "jpg"; // set to "png" if your tiles are PNG
           return { width, height, tileSize, fileFormat };
-        } catch (e) {
-          lastErr = `${url} → ${e.message}`;
-        }
+        } catch (e) { lastErr = `${url} → ${e.message}`; }
       }
       throw new Error(`Could not read ImageProperties.xml in ${baseDir}. Last: ${lastErr}`);
     }
@@ -129,10 +112,10 @@
           preserveViewport: true,
           showNavigator: false,
 
-          // Keep controls visible and snappy
-          controlsFadeDelay: 0,
+          // ✨ Keep controls always visible:
+          autoHideControls: false,          // <-- key line
+          controlsFadeDelay: 0,             // not used when autoHideControls=false, but harmless
           controlsFadeLength: 0,
-          // (CSS above also forces them visible as a backstop)
 
           showZoomControl: true,
           showHomeControl: true,
@@ -142,30 +125,26 @@
           tileSources
         });
 
-        // ── Microscopy scalebar ────────────────────────────────────────────────
+        // Microscopy scalebar
         viewer.scalebar({
           type: OpenSeadragon.ScalebarType.MICROSCOPY,
           pixelsPerMeter: PIXELS_PER_METER,
           minWidth: "120px",
-          xOffset: 12,
-          yOffset: 12,
+          xOffset: 12, yOffset: 12,
           location: OpenSeadragon.ScalebarLocation.BOTTOM_LEFT,
           stayInsideImage: true,
-          color: "#ffffff",
-          fontColor: "#ffffff",
+          color: "#ffffff", fontColor: "#ffffff",
           backgroundColor: "rgba(0,0,0,0.5)",
           barThickness: 3
         });
 
         function updateLabel() {
           const p = viewer.currentPage();
-          const entry = folders[p];
-          labelEl.textContent = entry ? entry.title : `Page ${p + 1}`;
+          labelEl.textContent = folders[p] ? folders[p].title : `Page ${p + 1}`;
         }
         viewer.addHandler('open', updateLabel);
         viewer.addHandler('page', updateLabel);
 
-        // Troubleshooting helpers
         viewer.addHandler('tile-load-failed', (e) => {
           errEl.style.display = 'block';
           errEl.textContent = `Tile failed: ${e.message || 'HTTP error'} — ${e.tile?.url || ''}`;
@@ -177,7 +156,6 @@
           console.error('Open failed', e);
         });
 
-        // Keyboard navigation: ← / → to move; 1–9 to jump
         window.addEventListener('keydown', (e) => {
           if (e.key === 'ArrowRight') viewer.nextPage();
           else if (e.key === 'ArrowLeft') viewer.previousPage();
