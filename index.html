@@ -30,7 +30,7 @@
     // Put your original calibration here (BEFORE any pre-tiling downsample):
     const PIXELS_PER_MICRON_ORIG = 8.0453;  // px / µm from your microscope
     // If you down-sampled before tiling (e.g., 4× shrink), set that factor here:
-    const DOWNSAMPLE_FACTOR = 2;            // 1 if no pre-downsampling
+    const DOWNSAMPLE_FACTOR = 4;            // 1 if no pre-downsampling
     // Effective pixels-per-micron in the tiles you’re viewing:
     const PIXELS_PER_MICRON = PIXELS_PER_MICRON_ORIG / Math.max(1, DOWNSAMPLE_FACTOR);
     const PIXELS_PER_METER  = PIXELS_PER_MICRON * 1e6; // px / m
