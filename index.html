@@ -9,41 +9,49 @@
   <style>
     html, body { height: 100%; margin: 0; background:#111; color:#fff; font:14px/1.35 system-ui, Arial, sans-serif; }
     #osd { position:absolute; inset:0; }
+
+    /* Title moved to bottom center */
     #label {
-      position:absolute; top:12px; left:50%; transform:translateX(-50%);
+      position:absolute; bottom:14px; left:50%; transform:translateX(-50%);
       z-index:10; background:rgba(0,0,0,.55); padding:6px 12px; border-radius:8px;
       pointer-events:none; user-select:none; font-weight:600; opacity:.95; max-width:80vw; text-align:center;
     }
+    /* Extra clearance on touch/smaller screens so it doesn't collide with scalebar/controls */
+    @media (pointer: coarse), (max-width: 900px) {
+      #label { bottom: 84px; }
+    }
+
     #err {
       position:absolute; bottom:10px; left:50%; transform:translateX(-50%);
       background:rgba(200,0,0,.25); border:1px solid rgba(255,80,80,.5);
       padding:6px 10px; border-radius:6px; max-width:90vw; font-size:12px; display:none;
     }
 
-    /* --- Bigger toolbar buttons (default slight bump) --- */
+    /* --- Bigger toolbar buttons --- */
     .openseadragon-container .openseadragon-button,
     .openseadragon-container .openseadragon-button > div {
-      width: 34px;
-      height: 34px;
+      width: 34px; height: 34px;
     }
-    /* Ensure the PNG sprites scale cleanly */
-    .openseadragon-container .openseadragon-button > div {
-      background-size: 100% 100% !important;
-    }
-    /* A little spacing so the bigger buttons don't collide */
+    .openseadragon-container .openseadragon-button > div { background-size: 100% 100% !important; }
     .openseadragon-container .openseadragon-button { margin: 4px; }
 
-    /* --- Even larger on touch devices / small screens --- */
     @media (pointer: coarse), (max-width: 900px) {
       .openseadragon-container .openseadragon-button,
       .openseadragon-container .openseadragon-button > div {
-        width: 52px;
-        height: 52px;
+        width: 52px; height: 52px;
       }
       .openseadragon-container .openseadragon-button { margin: 6px; }
-      /* Move away from edges a touch */
       .openseadragon-container .openseadragon-control { margin: 10px; }
     }
+
+    /* --- Force controls to NEVER fade/hide --- */
+    .openseadragon-container .openseadragon-control {
+      opacity: 1 !important;
+      transition: none !important;
+      pointer-events: auto !important;
+      visibility: visible !important;
+    }
+    .openseadragon-container .openseadragon-control:hover { opacity: 1 !important; }
   </style>
 </head>
 <body>
@@ -120,9 +128,12 @@
           sequenceMode: tileSources.length > 1,
           preserveViewport: true,
           showNavigator: false,
-          // Keep controls visible and snappy (nice on mobile)
+
+          // Keep controls visible and snappy
           controlsFadeDelay: 0,
           controlsFadeLength: 0,
+          // (CSS above also forces them visible as a backstop)
+
           showZoomControl: true,
           showHomeControl: true,
           showFullPageControl: true,
